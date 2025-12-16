@@ -1,0 +1,19 @@
+        body {
+            background-color: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        a {
+            color: lightblue;
+        }
+
+        img {
+            max-width: 300px;
+            height: auto;
+        }
+
+        li {
+            padding: 5px;
+        }
